@@ -142,6 +142,20 @@
   .item-row .price{width:84px;}
   .item-row .rm{background:none; border:none; color:var(--red); font-size:18px; cursor:pointer; padding:0 4px;}
 
+  .combo-wrap{position:relative;}
+  .combo-options{
+    position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:20;
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    max-height:220px; overflow-y:auto; display:none;
+    box-shadow:0 8px 20px rgba(23,63,58,.15);
+  }
+  .combo-options.show{display:block;}
+  .combo-option{padding:10px 13px; font-size:13.5px; cursor:pointer; border-bottom:1px solid var(--sand-dim);}
+  .combo-option:last-child{border-bottom:none;}
+  .combo-option:hover, .combo-option.active{background:var(--sand-dim);}
+  .combo-option.empty{color:#8a9089; cursor:default;}
+  .combo-option.empty:hover{background:none;}
+
   .total-line{
     display:flex; justify-content:space-between; margin-top:12px; padding-top:10px;
     border-top:1px dashed var(--line); font-weight:700; font-size:15px;
@@ -282,7 +296,12 @@
     <button class="close" onclick="closeSheet('overlay-order')">✕</button>
     <h2 id="order-form-title">Nuevo pedido</h2>
     <label>Cliente</label>
-    <select id="order-client"></select>
+    <div class="combo-wrap">
+      <input type="text" id="order-client-search" placeholder="Escribe para buscar cliente..." autocomplete="off"
+        oninput="renderOrderClientOptions(this.value)" onfocus="renderOrderClientOptions(this.value)">
+      <input type="hidden" id="order-client">
+      <div class="combo-options" id="order-client-options"></div>
+    </div>
 
     <label>Artículos del pedido</label>
     <div id="order-items"></div>
@@ -660,16 +679,46 @@ async function findOrCreateClientByName(name){
   return created.id;
 }
 
+// ---------- Buscador de cliente (combobox) para el formulario de pedido ----------
+function renderOrderClientOptions(query){
+  const box = document.getElementById('order-client-options');
+  const q = (query||'').trim().toLowerCase();
+  const matches = q ? clients.filter(c=>c.name.toLowerCase().includes(q)) : clients;
+  if(matches.length===0){
+    box.innerHTML = `<div class="combo-option empty">Sin resultados</div>`;
+  }else{
+    box.innerHTML = matches.slice(0,50).map(c=>
+      `<div class="combo-option" onmousedown="selectOrderClient(${c.id})">${c.name}</div>`
+    ).join('');
+  }
+  box.classList.add('show');
+}
+function selectOrderClient(id){
+  const c = clients.find(x=>x.id===id);
+  if(!c) return;
+  document.getElementById('order-client').value = id;
+  document.getElementById('order-client-search').value = c.name;
+  closeOrderClientOptions();
+}
+function closeOrderClientOptions(){
+  document.getElementById('order-client-options').classList.remove('show');
+}
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#order-client-search, #order-client-options')) closeOrderClientOptions();
+});
+
 // ---------- Order form ----------
 function openOrderForm(){
   if(clients.length===0){ showToast('Primero agrega un cliente'); openClientForm(); return; }
   editingOrderId = null;
   document.getElementById('order-form-title').textContent = 'Nuevo pedido';
   document.getElementById('order-save-btn').textContent = 'Guardar pedido';
-  const sel = document.getElementById('order-client');
-  sel.disabled = false;
-  sel.innerHTML = clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  if(currentClientId) sel.value = currentClientId;
+  const search = document.getElementById('order-client-search');
+  search.disabled = false;
+  const preset = currentClientId ? clients.find(c=>c.id===currentClientId) : null;
+  document.getElementById('order-client').value = preset ? preset.id : '';
+  search.value = preset ? preset.name : '';
+  closeOrderClientOptions();
   document.getElementById('order-items').innerHTML='';
   itemRowCount=0;
   addItemRow();
@@ -686,10 +735,12 @@ function openOrderEditForm(orderId){
   editingOrderId = orderId;
   document.getElementById('order-form-title').textContent = 'Editar pedido';
   document.getElementById('order-save-btn').textContent = 'Guardar cambios';
-  const sel = document.getElementById('order-client');
-  sel.innerHTML = clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  sel.value = order.client_id;
-  sel.disabled = true; // el pedido ya pertenece a este cliente
+  const client = clients.find(c=>c.id===order.client_id);
+  document.getElementById('order-client').value = order.client_id;
+  const search = document.getElementById('order-client-search');
+  search.value = client ? client.name : (currentDetail.client ? currentDetail.client.name : '');
+  search.disabled = true; // el pedido ya pertenece a este cliente
+  closeOrderClientOptions();
 
   document.getElementById('order-items').innerHTML='';
   itemRowCount=0;
@@ -746,6 +797,7 @@ function setPayType(val){
 }
 async function saveOrder(){
   const clientId = Number(document.getElementById('order-client').value);
+  if(!editingOrderId && !clientId){ showToast('Elige un cliente de la lista'); return; }
   const paymentType = document.querySelector('#order-paytype .radio-opt.active').dataset.val;
   const date = document.getElementById('order-date').value || todayStr();
   const method = methodToApi(document.getElementById('order-method').value);
@@ -794,7 +846,7 @@ async function saveOrder(){
   const wasEditing = !!editingOrderId;
   pendingProformaId = null;
   editingOrderId = null;
-  document.getElementById('order-client').disabled = false;
+  document.getElementById('order-client-search').disabled = false;
   closeSheet('overlay-order');
   currentClientId = clientId;
   await loadAll();
@@ -1087,6 +1139,7 @@ async function convertProformaToOrder(){
   closeSheet('overlay-proforma-view');
   openOrderForm();
   document.getElementById('order-client').value = client ? client.id : '';
+  document.getElementById('order-client-search').value = client ? client.name : currentPfClientName;
   document.getElementById('order-items').innerHTML = '';
   itemRowCount = 0;
   currentPfItems.forEach(it=>{
