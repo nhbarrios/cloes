@@ -1,0 +1,9 @@
+{
+  "name": "mundo-de-cloe-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend serverless (Netlify Functions) para el CRM de El Mundo de Cloe, conectado a TiDB Cloud",
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  }
+}
