@@ -1188,7 +1188,11 @@ async function openClientDetail(clientId){
       <div class="row2" style="margin-top:6px">
         <span style="color:var(--red)">Debe ${fmt(saldo)}</span>
         <button class="btn btn-teal btn-sm" onclick="openPaymentForm(${o.id})">+ Abono</button>
-      </div>` : `<div class="row2" style="margin-top:6px; color:var(--green)">✔ Saldado</div>`}
+      </div>` : `
+      <div class="row2" style="margin-top:6px; align-items:center">
+        <span style="color:var(--green)">✔ Saldado</span>
+        <button class="btn btn-ghost btn-sm" onclick="viewOrderReceipt(${o.id})">🧾 Ver comprobante</button>
+      </div>`}
       <div class="row2" style="margin-top:8px; gap:6px; justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" onclick="openOrderEditForm(${o.id})">✏️ Editar</button>
         <button class="btn btn-danger btn-sm" onclick="deleteOrder(${o.id})">🗑️ Borrar</button>
@@ -1199,7 +1203,10 @@ async function openClientDetail(clientId){
 
   const pays = data.payments.slice(0,10);
   document.getElementById('detail-payments').innerHTML = pays.length ? pays.map(p=>
-    `<div class="payment-row"><span>${fmtDate(p.payment_date)} · ${methodFromApi(p.method)}</span><span class="amt">+${fmt(p.amount)}</span></div>`
+    `<div class="payment-row" style="cursor:pointer" onclick="viewPaymentReceipt(${p.id})" title="Ver comprobante">
+      <span>${fmtDate(p.payment_date)} · ${methodFromApi(p.method)}</span>
+      <span class="amt">+${fmt(p.amount)} 🧾</span>
+    </div>`
   ).join('') : `<div class="muted">Sin abonos registrados.</div>`;
 
   document.getElementById('overlay-detail').classList.add('show');
@@ -1239,6 +1246,34 @@ async function savePayment(){
 }
 
 // ---------- Receipt ----------
+// Vuelve a mostrar el comprobante de un pedido ya saldado — útil si el
+// cliente perdió el que le mandaste, o para que lo enseñe al recibir su pedido.
+function viewOrderReceipt(orderId){
+  const order = currentDetail.orders.find(o=>o.id===orderId);
+  if(!order) return;
+  const orderPayments = (currentDetail.payments||[]).filter(p=>p.order_id===orderId);
+  if(orderPayments.length===0){ showToast('Este pedido todavía no tiene ningún abono registrado'); return; }
+  const paid = orderPayments.reduce((s,p)=>s+Number(p.amount),0);
+  const balance = Number(order.total) - paid;
+  const last = orderPayments[0]; // ya vienen ordenadas de más reciente a más antigua
+  buildReceipt(
+    { date: last.payment_date, method: methodFromApi(last.method), amount: last.amount },
+    order, false, { paid, balance }
+  );
+}
+// Vuelve a mostrar el comprobante de un abono específico de la lista "Últimos abonos".
+function viewPaymentReceipt(paymentId){
+  const p = (currentDetail.payments||[]).find(x=>x.id===paymentId);
+  if(!p) return;
+  const order = currentDetail.orders.find(o=>o.id===p.order_id);
+  if(!order){ showToast('No se encontró el pedido de este abono'); return; }
+  const paid = (currentDetail.payments||[]).filter(x=>x.order_id===p.order_id).reduce((s,x)=>s+Number(x.amount),0);
+  const balance = Number(order.total) - paid;
+  buildReceipt(
+    { date: p.payment_date, method: methodFromApi(p.method), amount: p.amount },
+    order, false, { paid, balance }
+  );
+}
 function buildReceipt(payment, order, isFullPayment, extra){
   const c = (currentDetail && currentDetail.client) || clients.find(x=>x.id===order.clientId) || {};
   const paid = extra ? extra.paid : Number(order.total) - (extra ? extra.balance : 0);
